@@ -1,0 +1,23 @@
+title: spiceoverflow
+description: Security research, AppSec insights, and vulnerability disclosures by Mo Sakr.
+url: "https://spiceoverflow.github.io"
+baseurl: ""
+
+author:
+  name: Mo Sakr
+  handle: spiceoverflow
+
+permalink: /writing/:year/:month/:day/:title/
+
+markdown: kramdown
+highlighter: rouge
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+  - .gitignore
+  - jekyll-site/

@@ -1,0 +1,29 @@
+---
+layout: default
+---
+
+<div class="home-hero">
+  <h1>AppSec, open-source vulnerabilities, and the future of security research.</h1>
+  <p>Bug bounty hunter and application security researcher. Exploring how AI and autonomous agents will shape offensive security.</p>
+</div>
+
+<span class="posts-label">Recent writing</span>
+
+<div class="post-list">
+  {% for post in site.posts %}
+  <a href="{{ post.url | relative_url }}" class="post-item">
+    <time class="post-date">{{ post.date | date: "%b %-d, %Y" }}</time>
+    <h2 class="post-title">{{ post.title }}</h2>
+    {% if post.excerpt %}
+    <p class="post-excerpt">{{ post.excerpt | strip_html | truncatewords: 45 }}</p>
+    {% endif %}
+    <span class="post-read">Read &rarr;</span>
+  </a>
+  {% endfor %}
+
+  {% if site.posts.size == 0 %}
+  <p style="color: var(--muted); font-size: 14px; padding: 40px 0; font-family: 'DM Mono', monospace;">
+    No posts yet &mdash; add Markdown files to <code>_posts/</code> to get started.
+  </p>
+  {% endif %}
+</div>

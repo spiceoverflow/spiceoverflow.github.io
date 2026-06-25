@@ -1,0 +1,40 @@
+---
+layout: default
+title: CVEs
+permalink: /cves/
+---
+
+<div class="cve-intro">
+  <span class="page-label">CVE Disclosures</span>
+  <p class="page-subtitle">Coordinated vulnerability disclosures and CVE assignments.</p>
+</div>
+
+<div class="cve-table">
+  <div class="cve-table-head">
+    <span>CVE ID</span>
+    <span>Description</span>
+    <span>Severity</span>
+    <span>Published</span>
+  </div>
+
+  {% if site.data.cves and site.data.cves.size > 0 %}
+    {% for cve in site.data.cves %}
+    <div class="cve-row">
+      <div class="cve-id">
+        {% if cve.url %}<a href="{{ cve.url }}" target="_blank" rel="noopener noreferrer">{{ cve.id }}</a>{% else %}{{ cve.id }}{% endif %}
+      </div>
+      <div class="cve-desc">
+        <span class="title">{{ cve.title }}</span>
+        <span class="vendor">{{ cve.vendor }}</span>
+      </div>
+      <div class="cve-severity">{{ cve.severity }}</div>
+      <div class="cve-date">{{ cve.date }}</div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="cve-empty">
+    <p>Coming soon.</p>
+    <small>A couple of CVEs are in the works — disclosures will appear here once they're assigned.</small>
+  </div>
+  {% endif %}
+</div>

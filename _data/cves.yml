@@ -1,0 +1,10 @@
+# Add your CVE disclosures here — one entry per CVE.
+# The table on /cves/ is generated from this file automatically.
+#
+# Example entry:
+# - id: CVE-2024-12345
+#   title: Arbitrary file read via path traversal
+#   vendor: some-npm-package
+#   severity: High
+#   date: "2024-09-01"
+#   url: https://github.com/org/repo/security/advisories/GHSA-xxxx
