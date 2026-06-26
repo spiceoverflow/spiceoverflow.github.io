@@ -267,6 +267,31 @@ nav {
   border-top: 1px solid var(--border);
   margin: 40px 0;
 }
+.post-content figure { margin: 28px 0; }
+.post-content figure img {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.post-content figcaption {
+  font-size: 12.5px;
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  line-height: 1.55;
+  margin-top: 10px;
+}
+.post-content .img-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 28px 0;
+}
+.post-content .img-pair figure { margin: 0; }
+@media (max-width: 600px) {
+  .post-content .img-pair { grid-template-columns: 1fr; gap: 24px; }
+}
+
 .post-back {
   margin-top: 56px;
   padding-top: 32px;

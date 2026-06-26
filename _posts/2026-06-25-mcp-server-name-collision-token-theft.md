@@ -5,7 +5,7 @@ date: 2026-06-25
 excerpt: "VS Code identifies MCP servers — and the OAuth tokens they're trusted with — by a plain name string with no binding to a publisher, URL, or key. Any server can claim the name io.github.github/github-mcp-server and silently inherit the real GitHub MCP Server's token. GitHub called it out of scope; Microsoft called it Moderate and won't issue a CVE. Here's the full chain, and why I disagree."
 ---
 
-> **tl;dr** VS Code (and therefore GitHub Codespaces, vscode.dev, and github.dev) identifies an MCP server — and decides which cached OAuth tokens that server is allowed to receive — using nothing but a user-supplied name string. There is no binding to a publisher, a remote URL, or any cryptographic identity. A malicious MCP server that claims the name `io.github.github/github-mcp-server` silently inherits the real GitHub MCP Server's OAuth token, in many cases with **zero** dialogs and **zero** warnings. GitHub marked it out of scope ("it's a Microsoft product"); Microsoft assessed it Moderate, declined a bounty, and will not issue a CVE or track it. So this is a public advisory. Skip to [The Bug](#the-bug) if you want the technical meat, or [Why I'm Disclosing This](#why-im-disclosing-this) for the disagreement.
+> **tl;dr** VS Code (and therefore GitHub Codespaces) identifies an MCP server — and decides which cached OAuth tokens that server is allowed to receive — using nothing but a user-supplied name string. There is no binding to a publisher, a remote URL, or any cryptographic identity. A malicious MCP server that claims the name `io.github.github/github-mcp-server` silently inherits the real GitHub MCP Server's OAuth token, with **zero** dialogs and **zero** warnings. GitHub marked it out of scope ("it's a Microsoft product"); Microsoft assessed it Moderate, declined a bounty, and will not issue a CVE or track it. So this is a public advisory. Skip to [The Bug](#the-bug) if you want the technical meat, or [Why I'm Disclosing This](#why-im-disclosing-this) for the disagreement.
 >
 > _This write-up is educational and intended as a PSA for other researchers and for users of MCP in VS Code. It is not an exploit you can copy-paste against a stranger — the dangerous primitive (silent cross-server token reuse) is described, but the live token-capture server is omitted on purpose._
 
@@ -13,19 +13,41 @@ excerpt: "VS Code identifies MCP servers — and the OAuth tokens they're truste
 
 Over the last year, [MCP](https://modelcontextprotocol.io/) (the Model Context Protocol) went from a niche Anthropic spec to the default way every AI coding tool plugs into external services. VS Code ships first-class MCP support: you browse a marketplace, click **Install**, the server authenticates to whatever backend it talks to (GitHub, Slack, Atlassian…), and from then on your AI agent can act on your behalf through that server.
 
-The flagship example is the **GitHub MCP Server** (`io.github.github/github-mcp-server`). When you install it and click **Allow** on the consent prompt, VS Code runs GitHub's OAuth flow and caches a grant so the server can keep talking to GitHub without re-prompting you. That cached grant is the crown jewel: for the GitHub MCP Server it's a token carrying scopes like `repo`, `workflow`, `packages`, `read:org`, and `read:user` — effectively full read/write to all of your private repositories and Actions workflows.
+The flagship example is the **GitHub MCP Server** (`io.github.github/github-mcp-server`). When you install it and click **Allow** on the authentication consent prompt, VS Code runs GitHub's OAuth flow and caches a grant so the server can keep talking to GitHub without re-prompting you. That cached grant is the crown jewel: for the GitHub MCP Server it's a token carrying scopes like `repo`, `workflow`, `packages`, `read:org`, and `read:user` — effectively full read/write to all of your private repositories and Actions workflows.
+
+<figure>
+  <img src="/assets/img/mcp/legit-auth-consent.png" alt="VS Code dialog reading: The MCP Server Definition io.github.github/github-mcp-server wants to authenticate to GitHub, with Allow and Cancel buttons">
+  <figcaption>The one-time consent for the <em>real</em> GitHub MCP Server. Click <strong>Allow</strong> once and VS Code caches a GitHub OAuth grant under the name <code>io.github.github/github-mcp-server</code> — the grant that later gets handed out silently.</figcaption>
+</figure>
 
 So the obvious question for anyone who has spent time around OAuth: **what, exactly, is that cached token bound to?** When a second server shows up later and asks for a token, how does VS Code decide whether it's allowed to have it?
 
 The answer turned out to be: it's bound to the server's *name*. That's it. And in VS Code, the name is whatever the install link says it is.
 
-### A note on Codespaces
+### Delivery: install URLs, not the marketplace
 
-Everything below is an upstream VS Code issue, but it gets meaner in **GitHub Codespaces** and the web editors (`vscode.dev`, `github.dev`). In those environments:
+One misconception to kill up front: **you don't get attacked by browsing the marketplace.** The marketplace matters only because it makes the target's *name* public — `io.github.github/github-mcp-server` is right there in the listing. The attack itself is delivered through MCP **install URLs** (`vscode:mcp/...` deeplinks), and any arbitrary, attacker-controlled endpoint can use one to *claim* that name. The attacker can't realistically publish a colliding server in the marketplace, and doesn't need to.
 
-- Workspaces are **trusted by default**, so the usual "Do you trust the authors of this folder?" speed bump is gone.
-- A malicious MCP server doesn't need any infrastructure of its own — a free Codespace with a forwarded port gives the attacker a CA-trusted HTTPS endpoint (`https://<name>-5000.app.github.dev`) in about a minute.
-- The token at stake is a *GitHub* token, sitting inside *GitHub's own* product, used against *GitHub's own* assets.
+That makes delivery **stealthy and targeted** rather than passive. An install URL can be planted in:
+
+- a rendered markdown file in a repo the victim clones or opens,
+- an extension README, or a page in the integrated / Simple Browser,
+- Copilot chat output (via indirect prompt injection),
+- or just a plain link on any web page.
+
+<figure>
+  <img src="/assets/img/mcp/variant1-deeplink-rendered.png" alt="Rendered markdown preview in VS Code showing an innocuous click here to install GitHub MCP Server link">
+  <figcaption>What the victim sees: a rendered markdown file with an innocuous "click here to install GitHub MCP Server" link. Nothing about it hints at a credential handoff.</figcaption>
+</figure>
+
+### Desktop and Codespaces — same bug, different wrapper
+
+This is an upstream VS Code flaw, so it fires the same way in the desktop app and in the browser (GitHub Codespaces). The vulnerability, the two variants, and the impact are **identical**; only the delivery wrapper changes:
+
+- **Desktop VS Code.** A normal web link of the form `https://vscode.dev/redirect?url=vscode:mcp/...` invokes the desktop `vscode:` protocol handler. Any link, on any page, reaches any desktop VS Code user — which is why I rate this `AC:L`.
+- **GitHub Codespaces / web.** The `vscode:mcp/...` link is opened from *inside* the workspace — a markdown file, Copilot chat, or the integrated browser.
+
+Either way it's the same vulnerability; only the wrapper that delivers the deeplink changes, and neither requires the victim to go looking for anything.
 
 ## How VS Code Trusts an MCP Server
 
@@ -54,7 +76,7 @@ OAuth token grants in VS Code are stored and retrieved by the server's name stri
 
 Here's the full chain, end to end:
 
-1. **Delivery.** The victim opens an attacker-influenced `vscode:mcp/...` link. In Codespaces this is as easy as a link in a markdown file in a cloned repo, an extension README, the integrated browser, or injected Copilot chat content.
+1. **Delivery.** The victim follows an attacker-supplied install URL: a `vscode:mcp/...` deeplink opened inside a workspace, or — on desktop — a plain `https://vscode.dev/redirect?url=vscode:mcp/...` web link that triggers VS Code's `vscode:` protocol handler. No marketplace browsing required.
 2. **Spoofed identity.** The install descriptor claims `name: "io.github.github/github-mcp-server"` but points `url` at the attacker's endpoint. The JSON-install variant also sets `"type": ""`, which makes VS Code auto-detect the transport *and* omits the remote URL from the visible **Configuration** tab — so even a careful user staring at the panel doesn't see the attacker's address.
 3. **Automatic trust.** Because the deeplink install is registered as `Kind.Trusted`, the security/trust dialog never fires.
 4. **Silent token handoff.** The attacker's server returns `HTTP 401`. VS Code dutifully fetches the attacker's [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728) Protected Resource Metadata, resolves the auth provider, and calls `isAccessAllowed()`. The stored GitHub grant — keyed by name — matches. **The token is delivered to the attacker's server on the next request.** No consent modal, no warning, no URL shown.
@@ -84,7 +106,15 @@ I built two working proof-of-concepts. Both end with the GitHub OAuth token in t
 
 Works **even while the legitimate server is still installed and running**. The link carries a minimal JSON descriptor; thanks to W6 the install panel is sparse and the real remote URL is hidden.
 
-> 📷 **Screenshot placeholder** — *Variant 1 install panel: shows the name `io.github.github/github-mcp-server` with the attacker's remote URL suppressed via `"type": ""`.*
+<figure>
+  <img src="/assets/img/mcp/variant1-deeplink-raw.png" alt="Raw markdown source of the Variant 1 deeplink showing the vscode:mcp/install payload with a colliding name and attacker URL">
+  <figcaption>The raw deeplink behind that link. The <code>name</code> is the real server's identifier, <code>url</code> points at the attacker's Codespace, and <code>"type":""</code> is the trick that hides that URL from the install panel.</figcaption>
+</figure>
+
+<figure>
+  <img src="/assets/img/mcp/variant1-install-panel.png" alt="VS Code MCP install panel showing the spoofed io.github.github/github-mcp-server name, an empty Type field, and no remote URL">
+  <figcaption>The resulting install panel. The Configuration tab shows the spoofed <code>io.github.github/github-mcp-server</code> name and an empty Type — and, crucially, no remote URL anywhere (W6). One click on <strong>Install</strong> is all that's left.</figcaption>
+</figure>
 
 If the real server is currently running, the first click reinstalls/stops it and a second **Install** completes the swap; if it isn't running, one click suffices. Either way, no auth dialog appears and the cached token is handed to the attacker.
 
@@ -92,11 +122,40 @@ If the real server is currently running, the first click reinstalls/stops it and
 
 Uses `vscode:mcp/<host>/gallery` to render a complete, convincing marketplace detail page served from the attacker's host — real GitHub icon, "29,000+ stars", MIT license, the genuine README in the Details tab, publisher shown as `github/github-mcp-server`. The *only* visible anomaly is the `remotes[].url` field pointing at the Codespace host instead of `api.githubcopilot.com`.
 
-> 📷 **Screenshot placeholder** — *Variant 2 spoofed gallery panel side-by-side with the real GitHub MCP Server listing. Spot the difference: one field.*
+<figure>
+  <img src="/assets/img/mcp/variant2-deeplink-raw.png" alt="Raw markdown source of the Variant 2 deeplink using the vscode:mcp host gallery form">
+  <figcaption>The Variant 2 deeplink has a different shape — <code>vscode:mcp/&lt;host&gt;/gallery</code> — which points VS Code at a gallery manifest served entirely from the attacker's host.</figcaption>
+</figure>
+
+The Details tab is, for all practical purposes, a pixel-perfect copy of the real listing:
+
+<div class="img-pair">
+  <figure>
+    <img src="/assets/img/mcp/legit-details.png" alt="Real GitHub MCP Server marketplace Details tab">
+    <figcaption>Real — from the marketplace.</figcaption>
+  </figure>
+  <figure>
+    <img src="/assets/img/mcp/spoofed-details.png" alt="Spoofed GitHub MCP Server Details tab served from the attacker">
+    <figcaption>Spoofed — served from the attacker.</figcaption>
+  </figure>
+</div>
+
+The two diverge in exactly one place — the Manifest tab's remote URL:
+
+<div class="img-pair">
+  <figure>
+    <img src="/assets/img/mcp/legit-manifest.png" alt="Real Manifest tab showing remote URL api.githubcopilot.com">
+    <figcaption>Real: <code>https://api.githubcopilot.com/mcp/</code>.</figcaption>
+  </figure>
+  <figure>
+    <img src="/assets/img/mcp/spoofed-manifest.png" alt="Spoofed Manifest tab showing the attacker Codespace remote URL">
+    <figcaption>Spoofed: the attacker's Codespace URL. This single field is the entire visible tell.</figcaption>
+  </figure>
+</div>
 
 The precondition for Variant 2 is W5 in action: the victim installed and authenticated the real server at some point, then uninstalled it **without** going to Accounts → *(GitHub account)* → **Manage Trusted MCP Servers** and removing the entry — which is the default uninstall path, because VS Code never prompts you to revoke MCP auth trust when you uninstall a server.
 
-> 📷 **Screenshot placeholder** — *Attacker Codespace terminal showing `*** TOKEN CAPTURED ***` and a `gho_…` preview immediately after the victim's Install click.*
+From here both variants converge: VS Code fetches the attacker's metadata, matches the cached grant by name, and ships the GitHub token to the attacker's server — which logs it on the next request.
 
 ## Impact
 
@@ -151,7 +210,7 @@ For users, until that lands:
 
 - Treat `vscode:mcp/...` links like any other "open this in my privileged app" link — i.e., don't click ones you didn't initiate.
 - After uninstalling any OAuth-authenticated MCP server, go to **Accounts → *(your account)* → Manage Trusted MCP Servers** and remove the entry manually. Uninstalling alone does **not** revoke it.
-- In Codespaces / web editors, remember workspaces are trusted by default — a markdown file in a repo you cloned can open these links.
+- Be equally wary of `https://vscode.dev/redirect?url=...` links on the desktop — they hand off to VS Code's `vscode:` protocol handler exactly like an in-workspace link does. A markdown file in a repo you cloned, or a page in the integrated browser, can carry one too.
 
 ## Timeline
 
