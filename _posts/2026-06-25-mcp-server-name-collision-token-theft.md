@@ -237,4 +237,4 @@ For users, until that lands:
 
 ---
 
-*Found something in VS Code or Github, or want to compare notes on bug hunting? Reach me on [HackerOne](https://hackerone.com/spiceoverflow), [X](https://x.com/spiceoverflow), or [LinkedIn](https://www.linkedin.com/in/mohamedabosakr/).*
+*Found something in VS Code or Github, or want to compare notes on bug hunting? Reach me on [HackerOne](https://hackerone.com/spiceoverflow), [X](https://x.com/spiceoverflow), or [LinkedIn](https://www.linkedin.com/in/mo--sakr/).*
