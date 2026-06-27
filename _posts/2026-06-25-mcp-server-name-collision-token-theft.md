@@ -44,7 +44,7 @@ That makes delivery **stealthy and targeted** rather than passive. An install UR
 
 This is an upstream VS Code flaw, so it fires the same way in the desktop app and in the browser (GitHub Codespaces). The vulnerability, the two variants, and the impact are **identical**; only the delivery wrapper changes:
 
-- **Desktop VS Code.** A normal web link of the form `https://vscode.dev/redirect?url=vscode:mcp/...` invokes the desktop `vscode:` protocol handler. Any link, on any page, reaches any desktop VS Code user — which is why I rate this `AC:L`.
+- **Desktop VS Code.** A normal web link of the form `https://vscode.dev/redirect?url=vscode:mcp/...` invokes the desktop `vscode:` protocol handler. Any link, on any page, can reach any desktop VS Code user — no Codespace required.
 - **GitHub Codespaces / web.** The `vscode:mcp/...` link is opened from *inside* the workspace — a markdown file, Copilot chat, or the integrated browser.
 
 Either way it's the same vulnerability; only the wrapper that delivers the deeplink changes, and neither requires the victim to go looking for anything.
@@ -167,7 +167,7 @@ For the demonstrated target — the GitHub MCP Server — the captured token car
 
 **Confidentiality and integrity: complete, within the token's scope. Privileges required: none. User interaction: opening the attacker's link plus one Install click (two if the legitimate server is currently running) — with no trust or consent dialog at any point, and nothing the victim could recognize as anomalous.**
 
-CVSS 3.1 I assessed it at `AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:H/A:N` = **8.7 (High)**. (In my GitHub submission I used a more conservative `AC:H` → 7.6 to account for the "real server previously authenticated" precondition; for any server whose name is published in the marketplace, that name is public and complexity is genuinely low, hence `AC:L`.)
+CVSS 3.1 I assess it conservatively at `AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:H/A:N` = **8.0 (High)** — the `AC:H` reflecting the one condition outside the attacker's control: the victim must have previously authenticated the legitimate server. Drop that to `AC:L` (defensible, since the target name is public and no victim-specific recon is required) and it rises to **9.3 (Critical)**. Either way it sits well above the **Moderate** Microsoft assigned.
 
 ### This is bigger than GitHub
 
