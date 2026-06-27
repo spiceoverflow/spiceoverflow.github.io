@@ -375,6 +375,7 @@ nav {
 /* ── CVEs ───────────────────────────────────────────── */
 .cve-intro { margin-bottom: 40px; }
 .cve-intro .page-label { margin-bottom: 8px; }
+.cve-intro .page-subtitle { margin-top: 0; margin-bottom: 0; }
 .cve-table {
   border: 1px solid var(--border);
   border-radius: 8px;
