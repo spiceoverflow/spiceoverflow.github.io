@@ -48,13 +48,12 @@ img { max-width: 100%; }
 }
 
 /* ── Header ─────────────────────────────────────────── */
-header {
+body > header {
   position: sticky;
   top: 0;
   z-index: 100;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(8px);
 }
 .header-inner {
   height: 56px;
